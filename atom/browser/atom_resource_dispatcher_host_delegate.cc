@@ -12,6 +12,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/stream_info.h"
 #include "net/base/escape.h"
 #include "net/ssl/client_cert_store.h"
@@ -62,12 +63,20 @@ void HandleExternalProtocolInUI(
   permission_helper->RequestOpenExternalPermission(callback, has_user_gesture);
 }
 
-void OnPdfStreamCreated(const GURL& original_url,
-                        const content::ResourceRequestInfo::WebContentsGetter&
-                            web_contents_getter) {
+void OnPdfStreamCreated(
+    const GURL& original_url,
+    const content::ResourceRequestInfo::WebContentsGetter& web_contents_getter,
+    int render_process_id,
+    int render_frame_id) {
   content::WebContents* web_contents = web_contents_getter.Run();
   if (!web_contents)
     return;
+
+  auto rfh =
+      content::RenderFrameHost::FromID(render_process_id, render_frame_id);
+  int frame_tree_node_id = -1;
+  if (rfh)
+    frame_tree_node_id = rfh->GetFrameTreeNodeId();
 
   // The URL passes the original pdf resource url, that will be requested
   // by the webui page.
@@ -75,6 +84,7 @@ void OnPdfStreamCreated(const GURL& original_url,
   content::NavigationController::LoadURLParams params(
       GURL(base::StringPrintf("%sindex.html?%s=%s", kPdfViewerUIOrigin,
                               kPdfPluginSrc, original_url.spec().c_str())));
+  params.frame_tree_node_id = frame_tree_node_id;
   web_contents->GetController().LoadURLWithParams(params);
 }
 
@@ -137,7 +147,8 @@ void AtomResourceDispatcherHostDelegate::OnStreamCreated(
   content::BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&OnPdfStreamCreated, stream->original_url,
-                 info->GetWebContentsGetterForRequest()));
+                 info->GetWebContentsGetterForRequest(), info->GetChildID(),
+                 info->GetRenderFrameID()));
 }
 
 }  // namespace atom
